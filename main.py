@@ -19,32 +19,36 @@ class WatchDog:
         self.file_searcher = file_searcher
 
     def on_created(self,event):
-        print("hey, " + event.src_path + " has been created!")
+        print(event.src_path + " has been created!")
+        if self.mode == "proactive":
+            fileSearcher = FileSearcher(event.src_path)
+            t1 = threading.Thread(target=fileSearcher.run)
+            t1.start()
+            t1.join()
 
     def run(self):
-        if self.mode == "passive":
-            print("Watch dog assigned to thread: {}".format(threading.current_thread().name))
-            # print("ID of process running task 1: {}".format(os.getpid()))
+        print("Watch dog assigned to thread: {}".format(threading.current_thread().name))
+        # print("ID of process running task 1: {}".format(os.getpid()))
 
-            patterns = "*"
-            ignore_patterns = ""
-            ignore_directories = False
-            case_sensitive = True
-            my_event_handler = PatternMatchingEventHandler(patterns, ignore_patterns, ignore_directories,
-                                                           case_sensitive)
-            my_event_handler.on_created = self.on_created
+        patterns = "*"
+        ignore_patterns = ""
+        ignore_directories = False
+        case_sensitive = True
+        my_event_handler = PatternMatchingEventHandler(patterns, ignore_patterns, ignore_directories,
+                                                       case_sensitive)
+        my_event_handler.on_created = self.on_created
 
-            go_recursively = True
-            my_observer = Observer()
-            my_observer.schedule(my_event_handler, path, recursive=go_recursively)
-            my_observer.start()
+        go_recursively = True
+        my_observer = Observer()
+        my_observer.schedule(my_event_handler, path, recursive=go_recursively)
+        my_observer.start()
 
-            try:
-                while True:#self.file_searcher.is_alive():
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                my_observer.stop()
-                my_observer.join()
+        try:
+            while True:#self.file_searcher.is_alive():
+                time.sleep(1)
+        except KeyboardInterrupt:
+            my_observer.stop()
+            my_observer.join()
 
 
 class FileSearcher:
