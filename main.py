@@ -13,16 +13,23 @@ import requests
 
 class WatchDog:
 
-    def __init__(self,path, mode, file_searcher):
+    def __init__(self, key, template, text_extraction, path, mode, file_searcher, store_output):
+        self.key = key
+        self.template = template
+        self.text_extraction = text_extraction
         self.path = path
         self.mode = mode
         self.file_searcher = file_searcher
+        self.store_output = store_output
+        self.threads = []
 
-    def on_created(self,event):
+    def on_created(self, event):
         print(event.src_path + " has been created!")
         if self.mode == "proactive":
-            fileSearcher = FileSearcher(event.src_path)
+            fileSearcher = FileSearcher(self.key, self.template, self.text_extraction, event.src_path,
+                                        self.store_output)
             t1 = threading.Thread(target=fileSearcher.run)
+            self.threads.append(t1)
             t1.start()
             t1.join()
 
@@ -44,7 +51,7 @@ class WatchDog:
         my_observer.start()
 
         try:
-            while True:#self.file_searcher.is_alive():
+            while True:
                 time.sleep(1)
         except KeyboardInterrupt:
             my_observer.stop()
@@ -53,28 +60,44 @@ class WatchDog:
 
 class FileSearcher:
 
-    def __init__(self,path):
+    def __init__(self, key, template, text_extraction, path, store_output):
+        self.key = key
+        self.template = template
+        self.text_extraction = text_extraction
         self.path = path
+        self.store_output = store_output
 
     def parseFile(self, path):
         with open(path, "rb") as file:
             encoded_string = base64.b64encode(file.read())
             decoded_string = encoded_string.decode("utf-8")
-            # print(decoded_string)
+            print(decoded_string)
             print(path)
             time.sleep(2)
         file.close()
-        self.apiRequest(path)
+        self.apiRequest(decoded_string, path)
 
-    def apiRequest(self, document):
-        # gewoon tekst opvragen, dit telt geen tickets.
+    def apiRequest(self, decoded_string, path):
+        # # gewoon tekst opvragen, dit telt geen tickets.
 
-        apiUrl = "https://test.custom-ocr.klippa.com/api/v1/credits"
-        headers = {'X-Auth-Key': 'lIr1BRW1VEjjy2d88HaRiFg5hQRE3FHL', 'Content-type': 'application/json',
+        # apiUrl = "https://test.custom-ocr.klippa.com/api/v1/credits"
+        # headers = {'X-Auth-Key': self.key, 'Content-type': 'application/json',
+        #            'Accept': 'application/json'}
+        # response = requests.get(apiUrl, headers=headers)
+        # print(json.dumps(response.json(), indent=4))
+
+        apiUrl = "https://test.custom-ocr.klippa.com/api/v1/parseDocument"
+        if self.template == "identity":
+            apiUrl = "https://test.custom-ocr.klippa.com/api/v1/parseDocument/identity"
+
+        data = {'document': decoded_string, 'pdf_text_extraction': self.text_extraction}
+        headers = {'X-Auth-Key': self.key, 'Content-type': 'application/json',
                    'Accept': 'application/json'}
-        response = requests.get(apiUrl, headers=headers)
+        response = requests.post(apiUrl, data=json.dumps(data), headers=headers)
         print(json.dumps(response.json(), indent=4))
-        self.storeOutput(response.json(), document)
+
+        if self.store_output == "yes":
+            self.storeOutput(response.json(), path)
 
     def storeOutput(self, data, path):
         current_file = open(path, "r")
@@ -84,8 +107,7 @@ class FileSearcher:
     def run(self):
         print("File searcher assigned to thread: {}".format(threading.current_thread().name))
         if os.path.isdir(self.path):
-            for path in pathlib.Path(self.path).iterdir():
-                if path.is_file():
+            for path in os.listdir(self.path):
                     if os.path.splitext(path)[1].upper() in {".PDF", ".GIF", ".PNG", ".JPG", ".HEIC", ".HEIF"}:
                         file_parser = threading.Thread(target=self.parseFile(path), name='FileParser')
                         file_parser.start()
@@ -104,14 +126,17 @@ if __name__ == '__main__':
     parser.add_argument("--path",
                         required=True, type=str)
     parser.add_argument("--template",
-                        choices=["financial", "identity", "structuredPdf", "plainText"],
+                        choices=["financial", "identity"],
                         default="financial", type=str)
     parser.add_argument("--text_extraction",
                         choices=["fast", "full"],
                         default="fast", type=str)
     parser.add_argument("--monitor",
                         choices=["passive", "proactive"],
-                        default="passive",type=str)
+                        default="passive", type=str)
+    parser.add_argument("--store_output",
+                        choices=["yes", "no"],
+                        type=str)
 
     args = parser.parse_args()
 
@@ -120,10 +145,14 @@ if __name__ == '__main__':
     template = args.template
     text_extraction = args.text_extraction
     monitor = args.monitor
+    store_output = args.store_output
+
+    # if monitor is not None and monitor_duration is None:
+    #     parser.error("--monitor requires --monitor_duration to be set.")
 
     # # creating threads
-    fileSearcher =  FileSearcher(path)
-    watchDog = WatchDog(path, monitor, fileSearcher)
+    fileSearcher = FileSearcher(key, template, text_extraction, path, store_output)
+    watchDog = WatchDog(key, template, text_extraction, path, monitor, fileSearcher, store_output)
     t1 = threading.Thread(target=fileSearcher.run)
     t2 = threading.Thread(target=watchDog.run)
 
@@ -132,10 +161,3 @@ if __name__ == '__main__':
 
     t1.join()
     t2.join()
-
-#    # url = "https://test.custom-ocr.klippa.com/api/v1/parseDocument"
-#    # data = {'document': decoded_string}
-#    # headers = {'X-Auth-Key':'lIr1BRW1VEjjy2d88HaRiFg5hQRE3FHL','Content-type': 'application/json', 'Accept': 'application/json'}
-#    # r = requests.post(url, data=json.dumps(data), headers=headers)
-#    # print(r)
-#
